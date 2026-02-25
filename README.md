@@ -327,7 +327,6 @@ OPENFR_MAX_TOTAL_TOOL_CALLS=14           # 单次会话最大工具调用次数
 | openrouter | `OPENROUTER_API_KEY` | `stepfun/step-3.5-flash:free` | 限时免费模型                                           |
 | together | `TOGETHER_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | OpenAI 兼容                                        |
 | groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | OpenAI 兼容                                        |
-| modelsproxy | `MODELSPROXY_API_KEY` | `minimax-m2.1` | OpenAI 兼容                                        |
 | ollama | `OLLAMA_BASE_URL` | `qwen2.5:14b` | 本地；`OLLAMA_BASE_URL` 默认 `http://localhost:11434` |
 | custom | `CUSTOM_API_KEY` + `CUSTOM_BASE_URL` | (空) | 自定义 OpenAI 兼容接口                                  |
 

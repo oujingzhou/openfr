@@ -325,7 +325,6 @@ OPENFR_MAX_TOTAL_TOOL_CALLS=14
 | openrouter | `OPENROUTER_API_KEY` | `stepfun/step-3.5-flash:free` | Free tier |
 | together | `TOGETHER_API_KEY` | `meta-llama/Llama-3.3-70B-Instruct-Turbo` | OpenAI-compatible |
 | groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | OpenAI-compatible |
-| modelsproxy | `MODELSPROXY_API_KEY` | `minimax-m2.1` | OpenAI-compatible |
 | ollama | `OLLAMA_BASE_URL` | `qwen2.5:14b` | Local; default URL `http://localhost:11434` |
 | custom | `CUSTOM_API_KEY` + `CUSTOM_BASE_URL` | (empty) | Custom OpenAI-compatible endpoint |
 

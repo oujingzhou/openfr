@@ -149,7 +149,7 @@ class TestConfigIntegration:
         providers = [
             "deepseek", "doubao", "dashscope", "zhipu", "modelscope",
             "kimi", "stepfun", "minimax", "openai", "anthropic",
-            "openrouter", "together", "groq", "ollama", "modelsproxy",
+            "openrouter", "together", "groq", "ollama",
         ]
 
         for provider in providers:

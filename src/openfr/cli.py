@@ -443,13 +443,6 @@ def providers():
         status = "[green]✓ 已配置[/]" if provider_info and provider_info["configured"] else "[dim]未配置[/]"
         table.add_row(name, cfg["env_key"], cfg["default_model"], cfg["description"], status)
 
-    # 代理/聚合
-    table.add_row("[bold]--- 代理/聚合 ---", "", "", "", "")
-    cfg = PROVIDER_CONFIG["modelsproxy"]
-    provider_info = provider_by_name.get("modelsproxy")
-    status = "[green]✓ 已配置[/]" if provider_info and provider_info["configured"] else "[dim]未配置[/]"
-    table.add_row("modelsproxy", cfg["env_key"], cfg["default_model"], cfg["description"], status)
-
     # 本地部署
     table.add_row("[bold]--- 本地部署 ---", "", "", "", "")
     cfg = PROVIDER_CONFIG["ollama"]
