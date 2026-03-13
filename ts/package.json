@@ -1,0 +1,27 @@
+{
+  "name": "openfr-agent",
+  "version": "0.1.0",
+  "description": "OpenFR TypeScript Agent based on pi-mono",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "query": "tsx src/index.ts query",
+    "chat": "tsx src/index.ts chat",
+    "tools": "tsx src/index.ts tools"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.57.1",
+    "@mariozechner/pi-agent-core": "^0.57.1",
+    "@sinclair/typebox": "^0.34.0",
+    "chalk": "^5.3.0",
+    "dotenv": "^16.4.0",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -39,3 +39,8 @@ dist/
 ### Jupyter 等
 .ipynb_checkpoints/
 
+### Node.js / TypeScript
+node_modules/
+ts/dist/
+package-lock.json
+
