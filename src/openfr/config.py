@@ -172,25 +172,13 @@ class Config:
     # 自定义提供商设置 (当 provider="custom" 时使用)
     custom_base_url: str = ""
     custom_api_key: str = ""
+    custom_api_style: str = "openai"  # "openai" 或 "anthropic"
 
     # Agent settings
-    max_iterations: int = 10
     verbose: bool = True
-    # 先规划任务再执行（Dexter 风格）：先拆解为步骤列表，再按步骤依次调用工具
-    enable_plan_execute: bool = True
-    # 自校验：在给出最终回答前先检查数据是否充分（Dexter 风格）
-    enable_self_validation: bool = True
-    # 无进展循环检测：近期多次失败/无效则强制收尾
-    enable_loop_detection: bool = True
-    # 单次会话最大工具调用总数，超过则强制收尾
-    max_total_tool_calls: int = 14
 
     # Performance settings
-    # 是否允许并行执行同一轮中的多个工具调用（线程并行）。
-    # 注意：部分数据源（如同花顺）可能通过 libmini_racer 执行 JS，线程并行可能导致崩溃。
     enable_parallel_tools: bool = True
-    # 是否允许在工具内部并行尝试多个数据源（线程并行）。
-    # 默认关闭以避免 libmini_racer 相关的非线程安全问题。
     enable_parallel_sources: bool = True
 
     # Tool settings
@@ -202,15 +190,35 @@ class Config:
     enable_index_tools: bool = True
 
     # Logging / debug settings
-    # 是否将每次会话的 Scratchpad 记录落盘为 JSONL（类似 Dexter）
-    log_scratchpad: bool = False
-    # 自定义日志目录；为空则默认使用 ~/.openfr/scratchpad
     log_dir: str = ""
 
+    # LangGraph 多 Agent 配置
+    max_debate_rounds: int = 1          # 多空辩论轮数
+    max_risk_discuss_rounds: int = 1    # 风险辩论轮数
+    max_recur_limit: int = 100          # LangGraph 递归限制
+    enable_checkpoint: bool = False     # 是否启用断点续传（暂未实现）
+
+    # Anthropic 扩展思维（thinking）配置
+    enable_thinking: bool = False       # 是否启用 extended thinking
+    thinking_budget: int = 5000         # thinking token 预算
+
+    # Agent 选择（可选：允许用户禁用某些分析师）
+    enable_market_analyst: bool = True
+    enable_fundamentals_analyst: bool = True
+    enable_news_analyst: bool = True
+    enable_macro_analyst: bool = True
+
     def __post_init__(self):
-        """设置默认模型"""
+        """设置默认模型，补全 custom 提供商环境变量"""
         if not self.model and self.provider in PROVIDER_CONFIG:
             self.model = PROVIDER_CONFIG[self.provider]["default_model"]
+        if self.provider == "custom":
+            if not self.custom_base_url:
+                self.custom_base_url = os.getenv("CUSTOM_BASE_URL", "")
+            if not self.custom_api_key:
+                self.custom_api_key = os.getenv("CUSTOM_API_KEY", "")
+            if self.custom_api_style == "openai":
+                self.custom_api_style = os.getenv("CUSTOM_API_STYLE", "openai")
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -224,12 +232,7 @@ class Config:
             model=model,
             temperature=float(os.getenv("OPENFR_TEMPERATURE", "0.0")),
             max_tokens=int(os.getenv("OPENFR_MAX_TOKENS", "4096")),
-            max_iterations=int(os.getenv("OPENFR_MAX_ITERATIONS", "10")),
             verbose=os.getenv("OPENFR_VERBOSE", "true").lower() == "true",
-            enable_plan_execute=os.getenv("OPENFR_ENABLE_PLAN_EXECUTE", "true").lower() == "true",
-            enable_self_validation=os.getenv("OPENFR_ENABLE_SELF_VALIDATION", "true").lower() == "true",
-            enable_loop_detection=os.getenv("OPENFR_ENABLE_LOOP_DETECTION", "true").lower() == "true",
-            max_total_tool_calls=int(os.getenv("OPENFR_MAX_TOTAL_TOOL_CALLS", "14")),
             enable_parallel_tools=os.getenv("OPENFR_ENABLE_PARALLEL_TOOLS", "true").lower() == "true",
             enable_parallel_sources=os.getenv("OPENFR_ENABLE_PARALLEL_SOURCES", "true").lower() == "true",
             enable_stock_tools=os.getenv("OPENFR_ENABLE_STOCK_TOOLS", "true").lower() == "true",
@@ -238,10 +241,20 @@ class Config:
             enable_futures_tools=os.getenv("OPENFR_ENABLE_FUTURES_TOOLS", "true").lower() == "true",
             enable_macro_tools=os.getenv("OPENFR_ENABLE_MACRO_TOOLS", "true").lower() == "true",
             enable_index_tools=os.getenv("OPENFR_ENABLE_INDEX_TOOLS", "true").lower() == "true",
-            log_scratchpad=os.getenv("OPENFR_LOG_SCRATCHPAD", "false").lower() == "true",
             log_dir=os.getenv("OPENFR_SCRATCHPAD_DIR", ""),
             custom_base_url=os.getenv("CUSTOM_BASE_URL", ""),
             custom_api_key=os.getenv("CUSTOM_API_KEY", ""),
+            custom_api_style=os.getenv("CUSTOM_API_STYLE", "openai"),
+            max_debate_rounds=int(os.getenv("OPENFR_MAX_DEBATE_ROUNDS", "1")),
+            max_risk_discuss_rounds=int(os.getenv("OPENFR_MAX_RISK_DISCUSS_ROUNDS", "1")),
+            max_recur_limit=int(os.getenv("OPENFR_MAX_RECUR_LIMIT", "100")),
+            enable_checkpoint=os.getenv("OPENFR_ENABLE_CHECKPOINT", "false").lower() == "true",
+            enable_thinking=os.getenv("OPENFR_ENABLE_THINKING", "false").lower() == "true",
+            thinking_budget=int(os.getenv("OPENFR_THINKING_BUDGET", "5000")),
+            enable_market_analyst=os.getenv("OPENFR_ENABLE_MARKET_ANALYST", "true").lower() == "true",
+            enable_fundamentals_analyst=os.getenv("OPENFR_ENABLE_FUNDAMENTALS_ANALYST", "true").lower() == "true",
+            enable_news_analyst=os.getenv("OPENFR_ENABLE_NEWS_ANALYST", "true").lower() == "true",
+            enable_macro_analyst=os.getenv("OPENFR_ENABLE_MACRO_ANALYST", "true").lower() == "true",
         )
 
     @classmethod

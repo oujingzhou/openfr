@@ -14,7 +14,7 @@ os.environ["TQDM_DISABLE"] = "1"
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-from openfr.agent import FinancialResearchAgent
 from openfr.config import Config
+from openfr.graph import ResearchGraph
 
-__all__ = ["FinancialResearchAgent", "Config", "__version__"]
+__all__ = ["ResearchGraph", "Config", "__version__"]

@@ -41,13 +41,8 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
 from openfr import __version__
-from openfr.agent import FinancialResearchAgent
 from openfr.config import Config, PROVIDER_CONFIG
-from openfr.formatter import (
-    format_tool_result,
-    format_final_answer,
-    create_progress_text
-)
+from openfr.formatter import format_final_answer
 
 # 需要先加载 .env
 from dotenv import load_dotenv
@@ -56,87 +51,201 @@ load_dotenv()
 from openfr.tools import get_tool_descriptions
 
 
-def process_agent_events(
-    agent: FinancialResearchAgent,
+
+# 多 Agent 节点中文名映射
+_NODE_DISPLAY = {
+    "Market Analyst": ("📈", "市场分析师", "cyan"),
+    "Fundamentals Analyst": ("📊", "基本面分析师", "yellow"),
+    "News Analyst": ("📰", "新闻分析师", "green"),
+    "Macro Analyst": ("🏛️", "宏观分析师", "magenta"),
+    "Msg Clear Market": (None, None, None),
+    "Msg Clear Fundamentals": (None, None, None),
+    "Msg Clear News": (None, None, None),
+    "Msg Clear Macro": (None, None, None),
+    "tools_market": ("🔧", "调用市场数据工具", "dim"),
+    "tools_fundamentals": ("🔧", "调用基本面数据工具", "dim"),
+    "tools_news": ("🔧", "调用新闻数据工具", "dim"),
+    "tools_macro": ("🔧", "调用宏观数据工具", "dim"),
+    "Bull Researcher": ("🐂", "多头研究员", "green"),
+    "Bear Researcher": ("🐻", "空头研究员", "red"),
+    "Research Manager": ("👔", "研究经理", "blue"),
+    "Aggressive Analyst": ("🔥", "激进分析师", "red"),
+    "Conservative Analyst": ("🛡️", "保守分析师", "blue"),
+    "Neutral Analyst": ("⚖️", "中性分析师", "yellow"),
+    "Portfolio Manager": ("💼", "投资组合经理", "bold green"),
+}
+
+# 各阶段分组
+_PHASE_NODES = {
+    "phase1": ["Market Analyst", "Fundamentals Analyst", "News Analyst", "Macro Analyst"],
+    "phase2": ["Bull Researcher", "Bear Researcher", "Research Manager"],
+    "phase3": ["Aggressive Analyst", "Conservative Analyst", "Neutral Analyst", "Portfolio Manager"],
+}
+
+
+def process_multi_agent_events(
+    graph,
     question: str,
-    messages: list | None = None,
+    target: str,
     verbose: bool = True,
-    show_plan: bool = True,
 ) -> str:
-    """处理 agent 事件并返回最终答案的公共函数"""
-    current_tool = None
-    current_step = None
-    current_step_goal = None
-    total_steps = None
+    """处理多 Agent 事件流并格式化输出"""
+    import time
 
-    with console.status("[bold green]🤔 正在思考...") as status:
-        for event in agent.run(question, messages=messages):
-            if event["type"] == "thinking":
-                iteration = event.get("iteration", 1)
-                phase = event.get("phase")
-                step_goal = event.get("step_goal")
-                if phase == "planning":
-                    status.update("[bold magenta]🧠 正在拆解任务...[/]")
-                elif step_goal is not None:
-                    step_num = event.get("step", iteration)
-                    if total_steps is not None and current_step != step_num:
-                        console.print(f"\n[bold cyan]第 {step_num}/{total_steps} 步[/] [dim]·[/] [cyan]{step_goal}[/]")
-                    current_step = step_num
-                    current_step_goal = step_goal
-                    status.update(f"[bold cyan]📌 第 {step_num}/{total_steps or '?'} 步: {step_goal[:30]}{'…' if len(step_goal) > 30 else ''}[/]")
-                else:
-                    current_step = None
-                    current_step_goal = None
-                    status.update(create_progress_text(iteration))
+    current_phase = None
+    node_count = 0
+    start_time = time.time()
 
-            elif event["type"] == "plan":
-                steps = event.get("steps") or []
-                total_steps = event.get("n_steps") or (len(steps) if steps else None)
-                if steps and show_plan:
-                    plan_text = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(steps))
-                    console.print(Panel(
-                        plan_text,
-                        title="[bold magenta]📋 任务规划[/bold magenta]",
-                        border_style="magenta",
-                        box=box.ROUNDED,
-                    ))
-                    status.update("[bold green]✓ 规划完成，开始执行[/]")
+    # 阶段标题
+    phase_titles = {
+        "phase1": "[bold cyan]阶段一：数据收集与分析[/bold cyan]",
+        "phase2": "[bold green]阶段二：投资辩论（多空对决）[/bold green]",
+        "phase3": "[bold magenta]阶段三：风险评估（三方辩论）[/bold magenta]",
+    }
 
-            elif event["type"] == "tool_start":
-                tool_name = event["tool"]
-                tool_desc = get_tool_display_name(tool_name)
-                current_tool = tool_name
-                step_num = event.get("step", current_step)
-                step_goal = event.get("step_goal", current_step_goal)
-                if step_num is not None and step_goal is not None:
-                    n = f"/{total_steps}" if total_steps is not None else ""
-                    status.update(f"[bold cyan]📌 第 {step_num}{n} 步: {step_goal[:25]}{'…' if len(step_goal) > 25 else ''} · {tool_desc}[/]")
-                else:
-                    status.update(create_progress_text(event.get("iteration", 1), tool_desc))
+    with console.status("[bold green]🚀 多Agent协作分析中...") as status:
+        for event in graph.run(question, target):
+            if event["type"] == "error":
+                console.print(f"\n[bold red]✗ 错误: {event['message']}[/bold red]")
+                return ""
 
+            if event["type"] != "node":
+                continue
+
+            node_name = event["node"]
+            output = event.get("output", {})
+            node_elapsed = event.get("elapsed", 0.0)
+            display = _NODE_DISPLAY.get(node_name)
+
+            # 跳过消息清理节点
+            if display and display[0] is None:
+                continue
+
+            node_count += 1
+
+            # 检测阶段切换
+            for phase_key, phase_nodes in _PHASE_NODES.items():
+                if node_name in phase_nodes and current_phase != phase_key:
+                    current_phase = phase_key
+                    console.print(f"\n{'─' * 50}")
+                    console.print(f"  {phase_titles[phase_key]}")
+                    console.print(f"{'─' * 50}")
+                    break
+
+            if display:
+                icon, cn_name, style = display
+            else:
+                icon, cn_name, style = "▶", node_name, "white"
+
+            # 更新状态
+            status.update(f"[bold {style}]{icon} {cn_name} 执行中...[/]")
+
+            elapsed_str = f"[dim] {node_elapsed:.1f}s[/dim]"
+
+            # 工具节点只在 verbose 模式下显示
+            if node_name.startswith("tools_"):
                 if verbose:
-                    console.print(f"\n[bold cyan]▶[/bold cyan] [bold]{tool_desc}[/bold]")
+                    console.print(f"  [dim]  {icon} {cn_name}{elapsed_str}[/dim]")
+                continue
 
-            elif event["type"] == "tool_end":
-                if verbose:
-                    result = event["result"]
-                    tool_name = current_tool or "unknown"
-                    formatted_result = format_tool_result(tool_name, result)
-                    console.print(formatted_result)
+            # 分析师完成报告
+            report_fields = {
+                "market_report": ("市场分析报告", "cyan"),
+                "fundamentals_report": ("基本面分析报告", "yellow"),
+                "news_report": ("新闻分析报告", "green"),
+                "macro_report": ("宏观分析报告", "magenta"),
+            }
 
-            elif event["type"] == "tool_warning":
-                console.print(Panel(
-                    f"⚠️  {event['message']}",
-                    border_style="yellow",
-                    title="[yellow]提示[/yellow]"
-                ))
+            reported = False
+            for field, (report_name, color) in report_fields.items():
+                if field in output and output[field]:
+                    report = output[field]
+                    if isinstance(report, list):
+                        report = "\n".join(
+                            block.get("text", "") for block in report
+                            if isinstance(block, dict) and block.get("type") == "text"
+                        )
+                    if not isinstance(report, str):
+                        report = str(report)
+                    console.print(
+                        f"\n  {icon} [bold {style}]{cn_name}[/bold {style}]"
+                        f" [dim]·[/dim] [green]✓ {report_name}已生成[/green]"
+                        f" [dim]({len(report)} 字符)[/dim]{elapsed_str}"
+                    )
+                    if verbose and report:
+                        from rich.markdown import Markdown
+                        console.print(Markdown(report))
+                    reported = True
+                    break
 
-            elif event["type"] == "answer":
-                console.print()
-                final_panel = format_final_answer(event["content"])
-                console.print(final_panel)
-                return event["content"]
+            if reported:
+                continue
 
+            # 辩论节点
+            if node_name in ("Bull Researcher", "Bear Researcher"):
+                debate_state = output.get("investment_debate_state", {})
+                current_resp = debate_state.get("current_response", "")
+                count = debate_state.get("count", 0)
+                console.print(
+                    f"\n  {icon} [bold {style}]{cn_name}[/bold {style}]"
+                    f" [dim]·[/dim] 第 {(count + 1) // 2} 轮辩论{elapsed_str}"
+                )
+                if verbose and current_resp:
+                    from rich.markdown import Markdown
+                    console.print(Markdown(current_resp))
+
+            elif node_name == "Research Manager":
+                plan = output.get("investment_plan", "")
+                if plan:
+                    console.print(
+                        f"\n  {icon} [bold {style}]{cn_name}[/bold {style}]"
+                        f" [dim]·[/dim] [green]✓ 投资建议已生成[/green]{elapsed_str}"
+                    )
+                    if verbose:
+                        from rich.markdown import Markdown
+                        console.print(Markdown(plan))
+
+            elif node_name in ("Aggressive Analyst", "Conservative Analyst", "Neutral Analyst"):
+                risk_state = output.get("risk_debate_state", {})
+                count = risk_state.get("count", 0)
+                # 找到当前说话者对应的历史字段
+                speaker_field = {
+                    "Aggressive Analyst": "current_aggressive_response",
+                    "Conservative Analyst": "current_conservative_response",
+                    "Neutral Analyst": "current_neutral_response",
+                }.get(node_name, "")
+                current_resp = risk_state.get(speaker_field, "")
+                console.print(
+                    f"\n  {icon} [bold {style}]{cn_name}[/bold {style}]"
+                    f" [dim]·[/dim] 第 {(count + 2) // 3} 轮风险评估{elapsed_str}"
+                )
+                if verbose and current_resp:
+                    from rich.markdown import Markdown
+                    console.print(Markdown(current_resp))
+
+            elif node_name == "Portfolio Manager":
+                decision = output.get("final_decision", "")
+                if not decision:
+                    console.print(f"[dim]DEBUG: Portfolio Manager output keys: {list(output.keys())}[/dim]")
+                    console.print(f"[dim]DEBUG: final_decision value: {repr(decision)}[/dim]")
+                if decision:
+                    total_elapsed = time.time() - start_time
+                    console.print(
+                        f"\n  {icon} [bold {style}]{cn_name}[/bold {style}]"
+                        f" [dim]·[/dim] [green]✓ 最终决策已生成[/green]{elapsed_str}"
+                    )
+                    console.print()
+                    console.print(f"[dim]⏱ 共执行 {node_count} 个节点，用时 {total_elapsed:.1f} 秒[/dim]")
+                    console.print()
+                    final_panel = format_final_answer(decision)
+                    console.print(final_panel)
+                    return decision
+
+            else:
+                console.print(f"\n  {icon} [bold {style}]{cn_name}[/bold {style}]{elapsed_str}")
+
+    total_elapsed = time.time() - start_time
+    console.print(f"\n[dim]⏱ 共执行 {node_count} 个节点，用时 {total_elapsed:.1f} 秒[/dim]")
     return ""
 
 
@@ -160,60 +269,6 @@ def get_default_provider() -> str:
 def get_default_model() -> str:
     """从环境变量获取默认模型"""
     return os.getenv("OPENFR_MODEL", "")
-
-
-def format_status_message(event: dict) -> Text:
-    """格式化状态消息，显示详细信息"""
-    text = Text()
-
-    if event["type"] == "thinking":
-        iteration = event["iteration"]
-        text.append("🤔 ", style="bold")
-        phase = event.get("phase")
-        step_goal = event.get("step_goal")
-        if phase == "planning":
-            text.append("规划任务", style="bold cyan")
-            text.append(" - 正在拆解研究步骤...", style="dim")
-        elif phase == "final_answer":
-            text.append("整理最终回答", style="bold cyan")
-            text.append(" - 正在综合所有步骤的结果...", style="dim")
-        elif step_goal:
-            # 按步骤执行阶段
-            text.append(f"第 {event.get('step', iteration)} 步思考", style="bold cyan")
-            text.append(f" - {step_goal}", style="dim")
-        else:
-            text.append(f"第 {iteration} 轮思考", style="bold cyan")
-            text.append(" - 正在分析问题并决定下一步操作...", style="dim")
-
-    elif event["type"] == "tool_start":
-        tool_name = event["tool"]
-        tool_desc = get_tool_display_name(tool_name)
-        text.append("🔧 ", style="bold")
-        text.append(f"调用工具: {tool_desc}", style="bold yellow")
-        # 显示参数
-        if event.get("args"):
-            args_str = ", ".join(f"{k}={v}" for k, v in event["args"].items())
-            if len(args_str) > 50:
-                args_str = args_str[:50] + "..."
-            text.append(f" ({args_str})", style="dim")
-
-    elif event["type"] == "tool_end":
-        text.append("✓ ", style="bold green")
-        text.append("工具执行完成", style="green")
-
-    elif event["type"] == "tool_warning":
-        text.append("⚠ ", style="bold yellow")
-        text.append(f"警告: {event['message']}", style="yellow")
-
-    elif event["type"] == "plan":
-        text.append("🧠 ", style="bold magenta")
-        text.append("任务规划完成：", style="bold magenta")
-        steps = event.get("steps") or []
-        if steps:
-            for i, s in enumerate(steps, 1):
-                text.append(f"\n  {i}. {s}", style="magenta")
-
-    return text
 
 
 def get_tool_display_name(tool_name: str) -> str:
@@ -264,14 +319,16 @@ def query(
     model: str = typer.Option(None, "--model", "-m", help="使用的模型 (留空使用环境变量或默认)"),
     provider: str = typer.Option(None, "--provider", "-p", help="模型提供商 (留空使用环境变量或默认)"),
     verbose: bool = typer.Option(True, "--verbose/--quiet", "-v/-q", help="是否显示详细过程"),
+    target: str = typer.Option("", "--target", "-t", help="研究标的（股票代码/名称）"),
 ):
     """
-    向金融研究 Agent 提问。
+    向金融研究 Agent 提问（多Agent协作模式）。
 
     示例:
         openfr query "贵州茅台今天股价多少?"
         openfr query "分析今天的热门板块" -p deepseek
-        openfr query "查询沪深300指数" -p dashscope -m qwen-max
+        openfr query "贵州茅台值得买吗？" --target 贵州茅台
+        openfr query "分析比亚迪的投资价值" --target 比亚迪 -p zhipu
     """
     # 使用环境变量默认值
     if provider is None:
@@ -298,6 +355,13 @@ def query(
     query_text.append("\n\n")
     query_text.append("🤖 模型: ", style="dim")
     query_text.append(f"{provider} / {config.get_model_name()}", style="cyan")
+    query_text.append("\n")
+    query_text.append("📊 模式: ", style="dim")
+    query_text.append("多Agent协作", style="cyan")
+    if target:
+        query_text.append("\n")
+        query_text.append("🎯 标的: ", style="dim")
+        query_text.append(target, style="cyan")
 
     console.print(Panel(
         query_text,
@@ -313,8 +377,10 @@ def query(
         env_key = PROVIDER_CONFIG[provider]["env_key"]
         console.print(f"[yellow]警告: 未设置 {env_key} 环境变量[/]")
 
-    agent = FinancialResearchAgent(config)
-    process_agent_events(agent, question, verbose=verbose)
+    # 多 Agent 模式
+    from openfr.graph import ResearchGraph
+    graph = ResearchGraph(config)
+    process_multi_agent_events(graph, question, target, verbose=verbose)
 
 
 @app.command()
@@ -323,7 +389,7 @@ def chat(
     provider: str = typer.Option(None, "--provider", "-p", help="模型提供商 (留空使用环境变量或默认)"),
 ):
     """
-    进入交互式对话模式。
+    进入交互式对话模式（多Agent协作）。
 
     示例:
         openfr chat
@@ -354,8 +420,11 @@ def chat(
     welcome_text.append("\n\n")
     welcome_text.append("💹 当前配置: ", style="cyan")
     welcome_text.append(f"{provider} / {config.get_model_name()}", style="yellow")
+    welcome_text.append("\n")
+    welcome_text.append("📊 模式: ", style="cyan")
+    welcome_text.append("多Agent协作", style="yellow")
     welcome_text.append("\n\n")
-    welcome_text.append("📝 输入您的问题开始分析", style="dim")
+    welcome_text.append("📝 输入您的问题开始分析（可用 --target 指定标的）", style="dim")
     welcome_text.append("\n")
     welcome_text.append("🚪 输入 ", style="dim")
     welcome_text.append("exit", style="bold dim")
@@ -371,9 +440,7 @@ def chat(
         padding=(1, 2)
     ))
 
-    agent = FinancialResearchAgent(config)
-    # 多轮对话上下文（仅保存用户/助手消息，避免工具结果过长）
-    chat_history = []
+    from openfr.graph import ResearchGraph
 
     # 创建带历史记录的输入会话
     session = PromptSession(history=InMemoryHistory())
@@ -393,9 +460,13 @@ def chat(
             if not question.strip():
                 continue
 
+            # 从问题中提取标的（简单策略：如果问题包含"分析"等关键词后面跟名称）
+            target = ""
+
             console.print()
             start_time = time.time()
-            process_agent_events(agent, question, messages=chat_history, verbose=True, show_plan=True)
+            graph = ResearchGraph(config)
+            process_multi_agent_events(graph, question, target, verbose=True)
             elapsed = time.time() - start_time
             console.print(f"[dim]⏱ 本轮用时 {elapsed:.1f} 秒[/]")
 
